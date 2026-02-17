@@ -134,7 +134,7 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for gui
 
 All Rights Reserved - See [LICENSE](LICENSE) file for full text.
 
-Copyright (c) 2026 PorterFC85
+Copyright (c) 2026 Dirty Tricks
 
 ## Credits
 
