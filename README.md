@@ -147,7 +147,7 @@ For rogues and hunters who want reliable threat redirection in group content.
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
 
-### Current Version: 1.1.0
+### Current Version: 1.1.1
 - Enhanced settings dialog with tank auto-detection display
 - Class-colored tank names in announcements
 - Modern WoW API compatibility (12.0+)
@@ -187,6 +187,6 @@ Dirty Tricks/
 
 ---
 
-**Version**: 1.1.0  
+**Version**: 1.1.1  
 **Author**: PorterFC85  
 **License**: All Rights Reserved
