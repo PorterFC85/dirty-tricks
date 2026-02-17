@@ -26,6 +26,8 @@ These macros are **dynamically updated** whenever group composition changes, so 
 
 ## Installation
 
+> **Important:** Do not use GitHub's **Code → Download ZIP** source archive (`*-main.zip`) for installation. Use the packaged ZIP from **GitHub Releases** or install via **CurseForge**.
+
 1. Extract the addon folder to `World of Warcraft\_retail_\Interface\AddOns\`
 2. Restart WoW or type `/reload`
 3. Enable "Dirty Tricks" in your Add-ons list

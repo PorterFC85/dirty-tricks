@@ -1,0 +1,19 @@
+# Dirty Tricks Package Metadata
+# Used by CurseForge and WoWInterface packagers
+
+package-as: Dirty-Tricks
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - README.md
+  - CHANGELOG.md
+  - .git
+  - .github
+  - .gitignore
+  - .pkgmeta
+  - .pkgmeta.yaml
+
+enable-nolib-creation: no
