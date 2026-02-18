@@ -5,7 +5,7 @@ Dirty Tricks - Settings Module
 Settings dialog popup for configuring addon preferences.
 Provides UI for enabling/disabling the addon and setting preferred tank names.
 
-All Rights Reserved - Copyright (c) 2026 PorterFC85
+All Rights Reserved - Copyright (c) 2026 Dirty Tricks
 See Core.lua for full license text.
 ================================================================================
 --]]
