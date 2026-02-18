@@ -13,7 +13,7 @@ Users can find the macros in their macro list:
 
 The macros are automatically created when the addon loads.
 
-All Rights Reserved - Copyright (c) 2026 PorterFC85
+All Rights Reserved - Copyright (c) 2026 Dirty Tricks
 See Core.lua for full license text.
 ================================================================================
 --]]
