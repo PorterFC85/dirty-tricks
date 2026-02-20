@@ -10,8 +10,8 @@ Description:
     abilities always go to the right tank with zero manual intervention.
 
 Author: PorterFC85
-Version: 1.1.2
-Date: February 16, 2026
+Version: 1.1.3
+Date: February 19, 2026
 
 ================================================================================
 All Rights Reserved
@@ -50,9 +50,14 @@ end
 
 -- Ensure saved vars
 if not SARDB then SARDB = { enabled = true, preferredTankName = nil } end
+if type(SARDB.announcements) ~= "boolean" then
+  SARDB.announcements = true
+end
 
 -- Track the last selected tank to avoid printing the message on every update
 local lastSelectedTank = nil
+local addonLoadTime = GetTime()
+local STARTUP_GRACE_PERIOD = 1 -- suppress announcements for 1 second after load
 
 -- Class color information
 local CLASS_COLORS = {
@@ -89,11 +94,34 @@ local PROFILE_COLOR = { r = 0.8, g = 0.8, b = 0.3 } -- Yellow
 local STATUS_COLOR = { r = 0.7, g = 0.7, b = 1 } -- Light blue
 
 -- Macro configuration
-local MACRO_SPELLS = { "Tricks of the Trade", "Misdirection" }
+local MACRO_SPELLS = {
+  { id = 57934, fallbackName = "Tricks of the Trade" },
+  { id = 34477, fallbackName = "Misdirection" }
+}
 local MACRO_PREFIX = "Dirty "
 local MACRO_TEMPLATE = "#showtooltip %s\n/cast "
 local MACRO_TARGET_TEMPLATE = "[@%s,help,nodead]"
 local MACRO_PET_TARGET_TEMPLATE = "[@pet]" -- Simpler conditional for pet targeting
+
+local function TrimString(value)
+  if value == nil then return "" end
+  if strtrim then return strtrim(value) end
+  return (value:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
+local function GetSpellInfoSafe(spellId, fallbackName)
+  if C_Spell and C_Spell.GetSpellInfo then
+    local info = C_Spell.GetSpellInfo(spellId)
+    if info and info.name then
+      return info.name, info.iconID
+    end
+  end
+
+  local name, _, icon = GetSpellInfo(spellId)
+  if name then return name, icon end
+
+  return fallbackName, nil
+end
 
 -- Find all tanks in current group (returns table of {name, unitId})
 local function FindTanks()
@@ -119,23 +147,6 @@ local function FindTanks()
   end
   
   return tanks
-end
-
--- Find first available tank or pet
-local function FindPrimaryTank()
-  local tanks = FindTanks()
-  if #tanks > 0 then
-    return tanks[1].unitId
-  end
-  
-  -- If hunter solo with pet
-  if playerClass == "HUNTER" and not IsInGroup() then
-    if UnitExists("pet") and not UnitIsDead("pet") then
-      return "pet"
-    end
-  end
-  
-  return nil
 end
 
 -- Get current profile type string
@@ -171,17 +182,26 @@ function UpdateMacros(shouldPrintMessage)
     end
   end
   
-  -- Only print messages if explicitly requested or if the selection changed
-  local shouldPrintOutput = shouldPrintMessage or (lastSelectedTank ~= currentSelectedTank)
+  -- Only print messages if explicitly requested or if the selection changed (but not during startup grace period)
+  local isStartupPeriod = (GetTime() - addonLoadTime) < STARTUP_GRACE_PERIOD
+  local shouldPrintOutput = (shouldPrintMessage or (lastSelectedTank ~= currentSelectedTank and not isStartupPeriod)) and SARDB.announcements
   
   if shouldPrintOutput and currentSelectedTank then
     -- Show which tank is selected
+    -- Determine class-specific verb
+    local verb = (playerClass == "HUNTER") and "Misdirecting to:" or "Tricks to:"
+    
     if SARDB.preferredTankName then
       -- User has set a preferred tank
+      local preferredLabel = SARDB.preferredTankName
+      if SARDB.preferredTankName == "focus" then
+        preferredLabel = "Focus"
+      elseif SARDB.preferredTankName == "target" then
+        preferredLabel = UnitName("target") or "Target"
+      end
       local msg = ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " " ..
-                  ColorizeText(playerClass .. " - " .. profileType, PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " | " ..
-                  ColorizeText("Redirecting to:", STATUS_COLOR.r, STATUS_COLOR.g, STATUS_COLOR.b) .. " " ..
-                  ColorizeText(SARDB.preferredTankName, 1, 1, 0.8)
+                  ColorizeText(playerClass .. " - " .. verb, PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " " ..
+                  ColorizeText(preferredLabel, 1, 1, 0.8)
       print(msg)
     elseif #tanks > 0 then
       -- Auto-detected tanks
@@ -194,16 +214,15 @@ function UpdateMacros(shouldPrintMessage)
       end
       if #tankNames > 0 then
         local msg = ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " " ..
-                    ColorizeText(playerClass .. " - " .. profileType, PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " | " ..
-                    ColorizeText("Redirecting to:", STATUS_COLOR.r, STATUS_COLOR.g, STATUS_COLOR.b) .. " " .. table.concat(tankNames, ", ")
+                    ColorizeText(playerClass .. " - " .. verb, PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " " .. table.concat(tankNames, ", ")
         print(msg)
       end
     elseif currentSelectedTank == "pet" then
       -- Solo hunter with pet
+      local petName = UnitName("pet") or "Pet"
       local msg = ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " " ..
-                  ColorizeText(playerClass .. " - " .. profileType, PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " | " ..
-                  ColorizeText("Redirecting to:", STATUS_COLOR.r, STATUS_COLOR.g, STATUS_COLOR.b) .. " " ..
-                  ColorizeText("Pet", 1, 1, 0.8)
+                  ColorizeText(playerClass .. " - " .. verb, PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " " ..
+                  ColorizeText(petName, 1, 1, 0.8)
       print(msg)
     end
     
@@ -211,78 +230,121 @@ function UpdateMacros(shouldPrintMessage)
     lastSelectedTank = currentSelectedTank
   end
   
-  for _, spellName in ipairs(MACRO_SPELLS) do
-    -- Use modern API for current WoW version
-    local spellInfo = C_Spell.GetSpellInfo(spellName)
+  for _, spellData in ipairs(MACRO_SPELLS) do
+    -- Skip spells not relevant to this class
+    local isRelevant = true
+    if (playerClass == "ROGUE" and spellData.id == 34477) or (playerClass == "HUNTER" and spellData.id == 57934) then
+      isRelevant = false
+    end
     
-    if spellInfo then
-      local icon = spellInfo.iconID
-      
-      -- Build macro name
-      local macroName = MACRO_PREFIX .. spellName
-      
-      -- Build macro body with conditional targeting
-      local body = string.format(MACRO_TEMPLATE, spellName)
+    if isRelevant then
+      local spellName, icon = GetSpellInfoSafe(spellData.id, spellData.fallbackName)
+      if spellName then
+        -- Build macro name
+        local macroName = MACRO_PREFIX .. spellName
 
-      -- Special-case: Hunter solo should target pet for Misdirection
-      if spellName == "Misdirection" and playerClass == "HUNTER" and not IsInGroup() then
-        if UnitExists("pet") and not UnitIsDead("pet") then
-          body = body .. MACRO_PET_TARGET_TEMPLATE
-        end
-      else
-        -- If preferred tank is set, use that instead of auto-detection
-        if SARDB.preferredTankName then
-          body = body .. string.format(MACRO_TARGET_TEMPLATE, SARDB.preferredTankName)
+        -- Build macro body with conditional targeting
+        local body = string.format(MACRO_TEMPLATE, spellName)
+
+        -- Special-case: Hunter solo should target pet for Misdirection
+        if spellData.id == 34477 and playerClass == "HUNTER" and not IsInGroup() then
+          if UnitExists("pet") and not UnitIsDead("pet") then
+            body = body .. MACRO_PET_TARGET_TEMPLATE
+          end
         else
-          -- Add tank targets from auto-detection
-          for _, tank in ipairs(tanks) do
-            if tank and tank.unitId then
-              body = body .. string.format(MACRO_TARGET_TEMPLATE, tank.unitId)
+          -- If preferred tank is set, use that instead of auto-detection
+          if SARDB.preferredTankName then
+            if SARDB.preferredTankName == "focus" or SARDB.preferredTankName == "target" then
+              body = body .. string.format(MACRO_TARGET_TEMPLATE, SARDB.preferredTankName)
+            else
+              body = body .. string.format(MACRO_TARGET_TEMPLATE, SARDB.preferredTankName)
+            end
+          else
+            -- Add tank targets from auto-detection
+            for _, tank in ipairs(tanks) do
+              if tank and tank.unitId then
+                body = body .. string.format(MACRO_TARGET_TEMPLATE, tank.unitId)
+              end
             end
           end
         end
-      end
 
-      -- Add player as fallback
-      body = body .. string.format(MACRO_TARGET_TEMPLATE, "player")
-      
-      -- Complete the macro
-      body = body .. " " .. spellName
-      
-      -- Get existing macro
-      local existingMacro, _, existingBody = GetMacroInfo(macroName)
-      
-      -- Trim whitespace for comparison
-      if existingBody then
-        existingBody = existingBody:gsub("^%s+|^%s+$", "")
-      end
-      
-      -- Create or update the macro - ONLY print on actual changes
-      if not existingMacro then
-        CreateMacro(macroName, icon, body)
-        local msg = ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " " ..
-                    ColorizeText("Created macro:", STATUS_COLOR.r, STATUS_COLOR.g, STATUS_COLOR.b) .. " " ..
-                    macroName .. " " .. ColorizeText("(" .. profileType .. ")", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b)
-        print(msg)
-      elseif existingBody ~= body then
-        EditMacro(macroName, macroName, icon, body)
-        local msg = ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " " ..
-                    ColorizeText("Macro updated:", STATUS_COLOR.r, STATUS_COLOR.g, STATUS_COLOR.b) .. " " ..
-                    macroName .. " " .. ColorizeText("(" .. profileType .. ")", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b)
-        print(msg)
+        -- Add player as fallback
+        body = body .. string.format(MACRO_TARGET_TEMPLATE, "player")
+
+        -- Complete the macro
+        body = body .. " " .. spellName
+
+        -- Get existing macro
+        local existingMacro, _, existingBody = GetMacroInfo(macroName)
+
+        -- Trim whitespace for comparison
+        if existingBody then
+          existingBody = existingBody:gsub("^%s+", ""):gsub("%s+$", "")
+        end
+
+        -- Create or update the macro - ONLY print on actual changes
+        if not existingMacro then
+          CreateMacro(macroName, icon, body)
+          local msg = ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " " ..
+                      ColorizeText("Created macro:", STATUS_COLOR.r, STATUS_COLOR.g, STATUS_COLOR.b) .. " " ..
+                      macroName .. " " .. ColorizeText("(" .. profileType .. ")", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b)
+          print(msg)
+        elseif existingBody ~= body then
+          EditMacro(macroName, macroName, icon, body)
+          local msg = ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " " ..
+                      ColorizeText("Macro updated:", STATUS_COLOR.r, STATUS_COLOR.g, STATUS_COLOR.b) .. " " ..
+                      macroName .. " " .. ColorizeText("(" .. profileType .. ")", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b)
+          print(msg)
+        end
       end
     end
   end
 end
 
 -- Event frame for group changes
+local updateTimer = nil
+local updateQueued = false
+local pendingPrint = false
+
+local function RunQueuedUpdate()
+  if not SARDB.enabled then return end
+  if InCombatLockdown and InCombatLockdown() then
+    updateQueued = true
+    return
+  end
+
+  updateQueued = false
+  local shouldPrint = pendingPrint
+  pendingPrint = false
+  UpdateMacros(shouldPrint)
+end
+
+local function RequestUpdateMacros(shouldPrint)
+  pendingPrint = pendingPrint or shouldPrint
+  if updateTimer then return end
+
+  updateTimer = C_Timer.After(0.35, function()
+    updateTimer = nil
+    RunQueuedUpdate()
+  end)
+end
+
+DirtyTricksRequestUpdateMacros = RequestUpdateMacros
+
 Addon:RegisterEvent("GROUP_JOINED")
 Addon:RegisterEvent("GROUP_ROSTER_UPDATE")
 Addon:RegisterEvent("PLAYER_ENTERING_WORLD")
+Addon:RegisterEvent("PLAYER_REGEN_ENABLED")
 Addon:SetScript("OnEvent", function(self, event, ...)
-  if SARDB.enabled then
-    UpdateMacros()
+  if event == "PLAYER_REGEN_ENABLED" then
+    if updateQueued then
+      RunQueuedUpdate()
+    end
+    return
   end
+
+  RequestUpdateMacros(false)
 end)
 
 -- Slash commands
@@ -307,28 +369,35 @@ SlashCmdList["SAR"] = function(msg)
     SARDB.enabled = not SARDB.enabled
     local status = SARDB.enabled and ColorizeText("Enabled", 0.3, 0.8, 0.3) or ColorizeText("Disabled", 1, 0.3, 0.3)
     print(ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " Addon " .. status)
-    if SARDB.enabled then UpdateMacros(true) end
+    if SARDB.enabled then RequestUpdateMacros(true) end
   elseif cmd == "settank" and rest ~= "" then
-    SARDB.preferredTankName = rest:trim()
+    SARDB.preferredTankName = TrimString(rest)
     local msg = ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " " ..
                 ColorizeText(playerClass .. " - " .. profileType, PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " | " ..
                 ColorizeText("Preferred tank set to:", STATUS_COLOR.r, STATUS_COLOR.g, STATUS_COLOR.b) .. " " ..
                 ColorizeText(SARDB.preferredTankName, 1, 1, 0.8)
     print(msg)
-    UpdateMacros(true)
+    RequestUpdateMacros(true)
   elseif cmd == "cleartank" then
     SARDB.preferredTankName = nil
     local msg = ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " " ..
                 ColorizeText(playerClass .. " - " .. profileType, PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " | " ..
                 ColorizeText("Using auto-detection", STATUS_COLOR.r, STATUS_COLOR.g, STATUS_COLOR.b)
     print(msg)
-    UpdateMacros(true)
+    RequestUpdateMacros(true)
+  elseif cmd == "minimap" or cmd == "icon" then
+    if DirtyTricks_ToggleMinimapIcon then
+      DirtyTricks_ToggleMinimapIcon()
+    else
+      print(ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " Minimap icon not available.")
+    end
   elseif cmd == "help" then
     print(ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " Auto Redirect commands:")
     print(ColorizeText("  /sar", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " - Open/close settings popup")
     print(ColorizeText("  /sar toggle", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " - Toggle addon on/off")
     print(ColorizeText("  /sar settank <name>", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " - Set preferred tank/player")
     print(ColorizeText("  /sar cleartank", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " - Clear preferred tank")
+    print(ColorizeText("  /sar minimap", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " - Toggle minimap icon")
     print(ColorizeText("  /sar help", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " - Show this message")
   else
     print(ColorizeText("[Dirty Tricks]", ADDON_COLOR.r, ADDON_COLOR.g, ADDON_COLOR.b) .. " Use " .. ColorizeText("/sar help", PROFILE_COLOR.r, PROFILE_COLOR.g, PROFILE_COLOR.b) .. " for commands")
@@ -336,4 +405,4 @@ SlashCmdList["SAR"] = function(msg)
 end
 
 -- Initialize on load
-UpdateMacros()
+RequestUpdateMacros(false)

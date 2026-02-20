@@ -5,6 +5,35 @@ All notable changes to Dirty Tricks will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-02-19
+
+### Added
+- Tank Selection UI with quick-select buttons for detected tanks
+- Target button for easy redirect to current target (with validation)
+- Per-character settings via SavedVariablesPerCharacter
+- Localization support via spell IDs with fallback names
+- Option to disable chat announcements (checkbox in settings)
+- Minimap icon (toggleable via settings or /sar minimap)
+- LibDBIcon integration for automatic minimap positioning
+
+### Changed
+- Redesigned chat announcements with class-specific verbs (Hunter: "Misdirecting to:", Rogue: "Tricks to:")
+- Pet announcements now display actual pet names instead of generic "Pet"
+- UI spacing improvements in settings dialog
+- Silent addon load (no startup announcements within 1 second of load)
+- Class-filtered macro creation (Rogues only see Tricks, Hunters only see Misdirection)
+
+### Fixed
+- Removed minimap registration error message on reload
+- Fixed target button to capture and display actual target name
+- Prevented startup spam of tank selection announcements
+- Tank name alignment in settings dialog
+
+### Technical
+- Removed unused FindPrimaryTank() function
+- Optimized startup grace period with time-based gating
+- Improved target validation (friendly unit check)
+
 ## [1.1.1] - 2026-02-17
 
 ### Changed
@@ -74,6 +103,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.1.3]: https://github.com/PorterFC85/dirty-tricks/releases/tag/v1.1.3
+[1.1.2]: https://github.com/PorterFC85/dirty-tricks/releases/tag/v1.1.2
 [1.1.1]: https://github.com/PorterFC85/dirty-tricks/releases/tag/v1.1.1
 [1.1.0]: https://github.com/PorterFC85/dirty-tricks/releases/tag/v1.1.0
 [1.0.0]: https://github.com/PorterFC85/dirty-tricks/releases/tag/v1.0.0

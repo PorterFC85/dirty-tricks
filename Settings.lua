@@ -26,6 +26,26 @@ end
 
 local ADDON_VERSION = GetAddonVersion()
 
+local function EnsureSavedVars()
+  if type(SARDB) ~= "table" then
+    SARDB = { enabled = true, preferredTankName = nil }
+  end
+  if type(SARDB.minimap) ~= "table" then
+    SARDB.minimap = { hide = false, angle = 225 }
+  end
+  if type(SARDB.announcements) ~= "boolean" then
+    SARDB.announcements = true
+  end
+end
+
+EnsureSavedVars()
+
+local function TrimString(value)
+  if value == nil then return "" end
+  if strtrim then return strtrim(value) end
+  return (value:gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
 -- Function to get current profile type
 local function GetProfileType()
   if IsInRaid() then
@@ -160,6 +180,7 @@ local function ApplyBlizzardStyle(frame)
 end
 
 local function CreateSettingsDialog()
+  EnsureSavedVars()
   local dialog = CreateFrame("Frame", "DirtyTricksSettingsDialog", UIParent)
   dialog:SetSize(420, 340)
   dialog:SetPoint("CENTER")
@@ -203,6 +224,14 @@ local function CreateSettingsDialog()
   subtitleText:SetPoint("TOPRIGHT", titleBg, "TOPRIGHT", -10, -8)
   subtitleText:SetText("v" .. (ADDON_VERSION or "0.1.0"))
   subtitleText:SetTextColor(1, 1, 1)
+
+  local function CreateDivider(yOffset)
+    local line = dialog:CreateTexture(nil, "ARTWORK")
+    line:SetColorTexture(1, 1, 1, 0.08)
+    line:SetPoint("TOPLEFT", 20, yOffset)
+    line:SetPoint("TOPRIGHT", -20, yOffset)
+    line:SetHeight(1)
+  end
   
   -- Enable/Disable Checkbox
   local enableCheck = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
@@ -211,26 +240,77 @@ local function CreateSettingsDialog()
   enableCheck:SetScript("OnClick", function(self)
     SARDB.enabled = self:GetChecked()
     print("[Dirty Tricks] Addon", SARDB.enabled and "Enabled" or "Disabled")
-    if SARDB.enabled and UpdateMacros then UpdateMacros(true) end
+    if SARDB.enabled then
+      if DirtyTricksRequestUpdateMacros then
+        DirtyTricksRequestUpdateMacros(true)
+      elseif UpdateMacros then
+        UpdateMacros(true)
+      end
+    end
   end)
   
   local enableLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormal")
   enableLabel:SetPoint("LEFT", enableCheck, "RIGHT", 8, 0)
   enableLabel:SetText("Enable Addon")
   enableLabel:SetTextColor(1, 1, 1, 1)
+
+  -- Minimap Icon Checkbox
+  EnsureSavedVars()
+  if type(SARDB.minimap) ~= "table" then
+    SARDB.minimap = { hide = false, angle = 225 }
+  end
+  local minimapState = SARDB.minimap
+  local minimapCheck = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
+  minimapCheck:SetPoint("TOPLEFT", 20, -75)
+  minimapCheck:SetChecked(not minimapState.hide)
+  minimapCheck:SetScript("OnClick", function(self)
+    EnsureSavedVars()
+    local visible = self:GetChecked()
+    if DirtyTricks_SetMinimapIconVisible then
+      DirtyTricks_SetMinimapIconVisible(visible)
+    else
+      if type(SARDB.minimap) ~= "table" then
+        SARDB.minimap = { hide = false, angle = 225 }
+      end
+      SARDB.minimap.hide = not visible
+    end
+  end)
+
+  local minimapLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  minimapLabel:SetPoint("LEFT", minimapCheck, "RIGHT", 8, 0)
+  minimapLabel:SetText("Show Minimap Icon")
+  minimapLabel:SetTextColor(1, 1, 1, 1)
+
+  -- Announcements Checkbox
+  local announcementsCheck = CreateFrame("CheckButton", nil, dialog, "UICheckButtonTemplate")
+  announcementsCheck:SetPoint("TOPLEFT", 20, -100)
+  announcementsCheck:SetChecked(SARDB.announcements)
+  announcementsCheck:SetScript("OnClick", function(self)
+    SARDB.announcements = self:GetChecked()
+  end)
+
+  local announcementsLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+  announcementsLabel:SetPoint("LEFT", announcementsCheck, "RIGHT", 8, 0)
+  announcementsLabel:SetText("Enable Chat Announcements")
+  announcementsLabel:SetTextColor(1, 1, 1, 1)
+
+  CreateDivider(-110)
   
   -- Profile and Detected Tanks display
   local profileLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  profileLabel:SetPoint("TOPLEFT", 20, -90)
+  profileLabel:SetPoint("TOPLEFT", 20, -130)
   profileLabel:SetText("Profile: " .. UnitClass("player") .. " - " .. GetProfileType())
   profileLabel:SetTextColor(0.8, 1.0, 0.8)
   
   local tanksLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  tanksLabel:SetPoint("TOPLEFT", 20, -110)
+  tanksLabel:SetPoint("TOPLEFT", 20, -150)
   tanksLabel:SetText("Detected Tanks:")
   tanksLabel:SetTextColor(0.9, 0.9, 0.9)
-  
-  -- Update label based on profile type
+    -- Detected tanks frame container
+  local tanksFrame = CreateFrame("Frame", nil, dialog)
+  tanksFrame:SetPoint("TOPLEFT", 20, -170)
+  tanksFrame:SetSize(300, 60)
+    -- Update label based on profile type
   local function UpdateTanksLabel()
     local profileType = GetProfileType()
     if profileType == "Solo with pet" then
@@ -242,7 +322,7 @@ local function CreateSettingsDialog()
   
   -- Detected Tanks display (with class colors)
   local tanksDisplay = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  tanksDisplay:SetPoint("TOPLEFT", 40, -130)
+  tanksDisplay:SetPoint("TOPLEFT", 150, -150)
   tanksDisplay:SetMaxLines(2)
   
   -- Update tanks display function
@@ -265,25 +345,118 @@ local function CreateSettingsDialog()
     end
   end
   
-  -- Update tanks when dialog opens
-  dialog:SetScript("OnShow", function()
-    UpdateTanksLabel()
-    UpdateTanksDisplay()
-  end)
-  
+  -- Quick Select Label
+  CreateDivider(-175)
+
+  local quickLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+  quickLabel:SetPoint("TOPLEFT", 20, -190)
+  quickLabel:SetText("Quick Select:")
+  quickLabel:SetTextColor(0.9, 0.9, 0.9)
+
+  -- Quick Select Buttons
+  local quickBtn1 = CreateFrame("Button", nil, dialog, "GameMenuButtonTemplate")
+  quickBtn1:SetPoint("TOPLEFT", 20, -210)
+  quickBtn1:SetSize(120, 22)
+  quickBtn1:Hide()
+
+  local quickBtn2 = CreateFrame("Button", nil, dialog, "GameMenuButtonTemplate")
+  quickBtn2:SetPoint("LEFT", quickBtn1, "RIGHT", 10, 0)
+  quickBtn2:SetSize(120, 22)
+  quickBtn2:Hide()
+
+  local targetBtn = CreateFrame("Button", nil, dialog, "GameMenuButtonTemplate")
+  targetBtn:SetPoint("LEFT", quickBtn2, "RIGHT", 10, 0)
+  targetBtn:SetSize(80, 22)
+  targetBtn:SetText("Target")
+
   -- Preferred Tank Label
   local tankLabel = dialog:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
-  tankLabel:SetPoint("TOPLEFT", 20, -160)
+  tankLabel:SetPoint("TOPLEFT", 20, -240)
   tankLabel:SetText("Force Specific Tank (optional):")
   tankLabel:SetTextColor(1, 1, 1, 1)
-  
+
   -- Tank Name Input Box
   local tankInput = CreateFrame("EditBox", "DirtyTricksTankInput", dialog, "InputBoxTemplate")
-  tankInput:SetPoint("TOPLEFT", 20, -180)
+  tankInput:SetPoint("TOPLEFT", 20, -260)
   tankInput:SetSize(200, 20)
   tankInput:SetText(SARDB.preferredTankName or "")
   tankInput:SetAutoFocus(false)
   tankInput:SetTextColor(1, 1, 1, 1)
+
+  local function SetPreferredTank(name)
+    SARDB.preferredTankName = name
+    tankInput:SetText(name or "")
+    if name == "focus" then
+      print("[Dirty Tricks] Preferred tank set to: Focus")
+    elseif name == "target" then
+      local targetName = UnitName("target") or "Target"
+      print("[Dirty Tricks] Preferred tank set to: " .. targetName)
+    elseif name and name ~= "" then
+      print("[Dirty Tricks] Preferred tank set to: " .. name)
+    else
+      print("[Dirty Tricks] Preferred tank cleared")
+    end
+    if SARDB.enabled then
+      if DirtyTricksRequestUpdateMacros then
+        DirtyTricksRequestUpdateMacros(true)
+      elseif UpdateMacros then
+        UpdateMacros(true)
+      end
+    end
+  end
+
+  local function UpdateQuickSelectButtons()
+    local tanks = GetDetectedTanks()
+    if tanks[1] and tanks[1].name then
+      quickBtn1:SetText(tanks[1].name)
+      quickBtn1.tankName = tanks[1].name
+      quickBtn1:Show()
+    else
+      quickBtn1:Hide()
+    end
+
+    if tanks[2] and tanks[2].name then
+      quickBtn2:SetText(tanks[2].name)
+      quickBtn2.tankName = tanks[2].name
+      quickBtn2:Show()
+    else
+      quickBtn2:Hide()
+    end
+  end
+
+  quickBtn1:SetScript("OnClick", function(self)
+    if self.tankName then
+      SetPreferredTank(self.tankName)
+    end
+  end)
+
+  quickBtn2:SetScript("OnClick", function(self)
+    if self.tankName then
+      SetPreferredTank(self.tankName)
+    end
+  end)
+
+  targetBtn:SetScript("OnClick", function()
+    if UnitExists("target") and UnitIsFriend("player", "target") and not UnitIsDead("target") then
+      SetPreferredTank("target")
+    else
+      print("[Dirty Tricks] Target is not a valid friendly unit.")
+    end
+  end)
+
+  -- Update tanks when dialog opens
+  dialog:SetScript("OnShow", function()
+    EnsureSavedVars()
+    UpdateTanksLabel()
+    UpdateTanksDisplay()
+    UpdateQuickSelectButtons()
+    tankInput:SetText(SARDB.preferredTankName or "")
+    if type(SARDB.minimap) ~= "table" then
+      SARDB.minimap = { hide = false, angle = 225 }
+    end
+    minimapCheck:SetChecked(not SARDB.minimap.hide)
+    announcementsCheck:SetChecked(SARDB.announcements)
+  end)
   
   -- OK Button
   local okBtn = CreateFrame("Button", nil, dialog, "GameMenuButtonTemplate")
@@ -291,15 +464,12 @@ local function CreateSettingsDialog()
   okBtn:SetSize(100, 24)
   okBtn:SetText("OK")
   okBtn:SetScript("OnClick", function()
-    local name = tankInput:GetText():trim()
+    local name = TrimString(tankInput:GetText())
     if name ~= "" then
-      SARDB.preferredTankName = name
-      print("[Dirty Tricks] Preferred tank set to: " .. name)
+      SetPreferredTank(name)
     else
-      SARDB.preferredTankName = nil
-      print("[Dirty Tricks] Preferred tank cleared")
+      SetPreferredTank(nil)
     end
-    if SARDB.enabled and UpdateMacros then UpdateMacros(true) end
     dialog:Hide()
   end)
   
@@ -310,9 +480,7 @@ local function CreateSettingsDialog()
   clearBtn:SetText("Clear")
   clearBtn:SetScript("OnClick", function()
     tankInput:SetText("")
-    SARDB.preferredTankName = nil
-    print("[Dirty Tricks] Preferred tank cleared")
-    if SARDB.enabled and UpdateMacros then UpdateMacros(true) end
+    SetPreferredTank(nil)
   end)
   
   -- Close Button
